@@ -2,7 +2,7 @@
     "meta": {
         "name": "TA-egnyte-connect",
         "displayName": "Egnyte Collaborate Add-on for Splunk",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "apiVersion": "3.0.0",
         "restRoot": "TA_egnyte_connect"
     },
@@ -456,7 +456,7 @@
                             "label": "Start Date",
                             "type": "text",
                             "required": false,
-                            "help": "Please Provide Start Time in format YYYY-MM-DDTHH:MM:SSZ. If you don't specify we will collect data for last 7 days."
+                            "help": "Please Provide Start Time in format YYYY-MM-DDTHH:MM:SSZ. If you don't specify we will collect data for last 24 hours."
                         }
                     ]
                 }

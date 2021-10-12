@@ -91,9 +91,9 @@ def collect_events(helper, ew):
     if checkpoint.get("start_date"):
         start_date = checkpoint.get("start_date")
     if not start_date:
-        start_date = datetime.utcnow() - timedelta(days=7)
+        start_date = datetime.utcnow() - timedelta(days=1)
         start_date = start_date.isoformat()  + "Z"
-        helper.log_debug("Setting up the default start date to 7 days from now. Setting Value: {}".format(start_date))
+        helper.log_debug("Setting up the default start date to 24 hours from now. Setting Value: {}".format(start_date))
     start_date_done = True
     params = {}
     while start_date_done:
