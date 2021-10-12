@@ -12,6 +12,9 @@ class IntervalValidator(Validator):
         if interval <= 0:
             self.put_msg("Interval must be a positive integer.")
             return False
+        if interval < 300:
+            self.put_msg("Interval must be greater or equals to 5 minutes.")
+            return False
         return True
 
 class StartDatetimeValidator(Validator):
@@ -32,8 +35,8 @@ class StartDatetimeValidator(Validator):
                 self.put_msg("Start Date can not exceed current datetime. Please enter valid Start Date.")
                 return False
             days_diff = datetime.datetime.utcnow() - start_datetime
-            if days_diff.days > 7:
-                self.put_msg("Start Date must be in range of last 7 days. Please enter valid Start Date.")
+            if days_diff.days != 0:
+                self.put_msg("Start Date must be in range of last 24 hours. Please enter valid Start Date.")
                 return False
 
             return True
