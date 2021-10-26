@@ -1,0 +1,39 @@
+stages:
+  - build
+
+build-spl-files:
+  stage: build
+  image:
+    name: ubuntu
+  dependencies: []
+  script:
+    - cd TA-egnyte-connect
+    - chown -R root:root *
+    - chmod -R 644 *
+    - chmod -R 755 bin
+    - chmod 700 default
+    - chmod 700 default/data
+    - chmod 700 default/data/ui
+    - chmod 700 default/data/ui/nav
+    - chmod 700 default/data/ui/views
+    - chmod 700 metadata
+    - chmod 700 static
+    - chmod 700 README
+    - chmod 700 appserver
+    - chmod 700 appserver/static
+    - chmod 700 appserver/static/css
+    - chmod 700 appserver/static/img
+    - chmod 700 appserver/static/js
+    - chmod 700 appserver/static/js/build
+    - chmod 700 appserver/templates
+    - cd ..
+    - tar cvf TA-egnyte-connect.tar TA-egnyte-connect
+    - gzip TA-egnyte-connect.tar
+
+    #- cd ..
+    - mkdir builds
+    - cp TA-egnyte-connect.tar.gz builds/TA-egnyte-connect.spl
+  artifacts:
+    paths:
+      - builds
+    expire_in: 1 week
