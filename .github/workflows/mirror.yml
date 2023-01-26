@@ -1,0 +1,29 @@
+name: Mirror
+
+on:
+  push:
+    branches:
+      - mirror_to_public
+
+jobs:
+
+  mirror:
+    if: github.repository != 'egnyte/collaborate-for-splunk' && startsWith(github.repository, 'egnyte/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Push to public repo
+        env:
+          MIRROR_TO_PUBLIC_PRIVATE_KEY: ${{ secrets.MIRROR_TO_PUBLIC_PRIVATE_KEY }}
+        run: |
+          # configure SSH client
+          eval $(ssh-agent -s)
+          echo "${MIRROR_TO_PUBLIC_PRIVATE_KEY}" | base64 -d | ssh-add -
+          mkdir ~/.ssh
+          echo "github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=" > ~/.ssh/known_hosts
+          # push the current branch
+          git remote add github git@github.com:egnyte/collaborate-for-splunk.git
+          git push -u github $GITHUB_REF_NAME
