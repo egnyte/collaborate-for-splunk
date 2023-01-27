@@ -2,7 +2,7 @@
     "meta": {
         "name": "TA-egnyte-connect",
         "displayName": "Egnyte Collaborate Add-on for Splunk",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "apiVersion": "3.0.0",
         "restRoot": "TA_egnyte_connect"
     },
@@ -30,6 +30,10 @@
                             "delete",
                             "clone"
                         ]
+                    },
+                    "hook":{
+                        "src": "egnyte_account_hook",
+                        "type": "external"
                     },
                     "entity": [
                         {
