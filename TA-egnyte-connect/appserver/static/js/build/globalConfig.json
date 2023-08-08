@@ -2,7 +2,7 @@
     "meta": {
         "name": "TA-egnyte-connect",
         "displayName": "Egnyte Collaborate Add-on for Splunk",
-        "version": "1.0.2",
+        "version": "1.0.3",
         "apiVersion": "3.0.0",
         "restRoot": "TA_egnyte_connect"
     },

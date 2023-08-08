@@ -31,11 +31,35 @@ def validate_input(helper, definition):
     # global_account = definition.parameters.get('global_account', None)
     pass
 
-def get_checkpoint(helper, stanza_name):
-    return helper.get_check_point(stanza_name)
+def get_checkpoint(helper, key, start_date=None):
+    checkpoint = helper.get_check_point(key)
+    if checkpoint is None:
+        checkpoint = {}
+    
+    if start_date is None or start_date == "":
+        # If start_date is not provided or is an empty string, set it to 1 day ago
+        start_date = datetime.utcnow() - timedelta(days=1)
+        start_date = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+        checkpoint['start_date'] = start_date
+    else:
+        # If start_date is provided (not None and not empty), update it in the checkpoint
+        checkpoint['start_date'] = start_date
+    
+    # Convert the start_date from the checkpoint to a datetime object
+    start_date_dt = datetime.strptime(checkpoint['start_date'], '%Y-%m-%dT%H:%M:%SZ')
+    
+    # Calculate the date 7 days ago from the current date
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    
+    # If the start_date from the checkpoint is older than 7 days ago, update it to the current date
+    if start_date_dt <= seven_days_ago:
+        checkpoint['start_date'] = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+           
 
-def set_checkpoint(helper, stanza_name, state):
-    return helper.save_check_point(stanza_name, state)
+    return checkpoint
+
+def set_checkpoint(helper, key, checkpoint):
+    return helper.save_check_point(key, checkpoint)
 
 def collect_events(helper, ew):
     # getting setup parameters
@@ -57,11 +81,10 @@ def collect_events(helper, ew):
     REDIRECT_URI = tec.REDIRECT_URI
     auth_url = str(egnyte_domain_url) + "/puboauth/token"
     mapping_data_type={"FILE_AUDIT": "file", "PERMISSION_AUDIT": "permission", "LOGIN_AUDIT": "login", "USER_AUDIT": "user", "WG_SETTINGS_AUDIT": "wg_settings", "GROUP_AUDIT": "group", "WORKFLOW_AUDIT": "workflow"}
-    checkpoint = get_checkpoint(helper, account_name) or dict()
+    checkpoint = get_checkpoint(helper, key=account_name, start_date=start_date) or dict()
     # Going to take access/refresh token if it is not available in the checkpoint
     if not checkpoint or str(checkpoint.get("code")) != str(code):
         helper.log_info("Checkpoint is not available or code changed from setup page. Hence requesting new access token.")
-        state = get_checkpoint(helper, account_name) or dict()
         try:
             response = generate_or_refresh_token(helper=helper, auth_url=auth_url, clientid=clientid, client_secret=client_secret, code=code, redirect_uri=REDIRECT_URI)
             helper.log_info("Checkpoint is not available or code changed from setup page. Hence requested new access token.")
@@ -78,41 +101,38 @@ def collect_events(helper, ew):
                 return
             else:
                 response = response.json()
-                state["access_token"] = response.get("access_token")
-                state["code"] = code
-                set_checkpoint(helper, account_name, state)
+                checkpoint["access_token"] = response.get("access_token")
+                checkpoint["code"] = code
+                set_checkpoint(helper, key=account_name, checkpoint=checkpoint)
         except Exception as e:
             raise e
-    checkpoint = get_checkpoint(helper, stanza_name) or dict()
-    checkpoint_token = get_checkpoint(helper, account_name) or dict()
+    
+    checkpoint_for_input = get_checkpoint(helper, key=stanza_name, start_date=start_date)
     data_url = ""
     end_date = datetime.utcnow().isoformat() + "Z"
     data = {}
-    if checkpoint.get("start_date"):
-        start_date = checkpoint.get("start_date")
-    if not start_date:
-        start_date = datetime.utcnow() - timedelta(days=1)
-        start_date = start_date.isoformat()  + "Z"
-        helper.log_debug("Setting up the default start date to 24 hours from now. Setting Value: {}".format(start_date))
+    
     start_date_done = True
     params = {}
+    if checkpoint_for_input.get("nextCursor"):
+        params['nextCursor']=checkpoint_for_input.get("nextCursor")
     while start_date_done:
         try:
             # collecting issues from the Egnyte server
-            params['startDate'] = start_date
+            params['startDate'] = checkpoint_for_input.get("start_date")
             params['endDate'] = end_date
             params['auditType'] = data_type
             if params.get("nextCursor"):
                 params.pop("startDate")
                 params.pop("endDate")
             data_url = str(egnyte_domain_url) + "/pubapi/v2/audit/stream"
-            helper.log_debug("Final URL for Egnyte Connect is:{} and Params is:{}".format(data_url, params))
-            data, response_text = collect_issues(helper, checkpoint_token.get('access_token'), data_url, params)
+            data, response_text = collect_issues(helper, checkpoint.get('access_token'), data_url, params)
+
             if data == 401:
                 helper.log_error("Please generate new code and update the input with new code.")
                 sys.exit(1)
             if data == 400:
-                helper.log_error("Error while collecting data. The message from API: {}".format(response_text))
+                helper.log_error("Error while collecting data. The message from API: {}".format(data, response_text))
         except Exception as e:
             raise e
         if data.get("events", ""):
@@ -122,6 +142,7 @@ def collect_events(helper, ew):
             index = stanza.get("index", "main")
             source = "egnyte"
             sourcetype = "egnyte:connect:audit:{}".format(mapping_data_type.get(data_type))
+            moreEventsflag = data.get("moreEvents")
             for i in events:
                 event = helper.new_event(data=json.dumps(i), time=event_time, host=None, index=index,source=source, sourcetype=sourcetype, done=True,unbroken=True)
                 ew.write_event(event)
@@ -133,5 +154,5 @@ def collect_events(helper, ew):
             helper.log_info("Total indexed events into Splunk: {}".format(number_of_events))
         time.sleep(1)
 
-    checkpoint["start_date"] = end_date
-    set_checkpoint(helper, stanza_name, checkpoint)
+    checkpoint_for_input["nextCursor"] = data.get("nextCursor")
+    set_checkpoint(helper, key=stanza_name, checkpoint=checkpoint_for_input)

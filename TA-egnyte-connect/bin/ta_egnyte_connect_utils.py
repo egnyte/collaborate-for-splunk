@@ -15,6 +15,9 @@ class IntervalValidator(Validator):
         if interval < 300:
             self.put_msg("Interval must be greater or equals to 5 minutes.")
             return False
+        if 'start_date' not in data:
+            data['start_date'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            return True
         return True
 
 class StartDatetimeValidator(Validator):
