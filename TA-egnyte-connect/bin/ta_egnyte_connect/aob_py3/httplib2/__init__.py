@@ -15,7 +15,7 @@ __contributors__ = [
     "Alex Yu",
 ]
 __license__ = "MIT"
-__version__ = "0.19.1"
+__version__ = "0.20.4"
 
 import base64
 import calendar
@@ -78,7 +78,7 @@ __all__ = [
 debuglevel = 0
 
 # A request will be tried 'RETRIES' times if it fails at the socket/connection level.
-RETRIES = 2
+RETRIES = 1
 
 
 # Open Items:
@@ -151,15 +151,18 @@ def _build_ssl_context(
     # source: https://docs.python.org/3/library/ssl.html#ssl.SSLContext.maximum_version
     if maximum_version is not None:
         if hasattr(context, "maximum_version"):
-            context.maximum_version = getattr(ssl.TLSVersion, maximum_version)
+            if isinstance(maximum_version, str):
+                maximum_version = getattr(ssl.TLSVersion, maximum_version)
+            context.maximum_version = maximum_version
         else:
             raise RuntimeError("setting tls_maximum_version requires Python 3.7 and OpenSSL 1.1 or newer")
     if minimum_version is not None:
         if hasattr(context, "minimum_version"):
-            context.minimum_version = getattr(ssl.TLSVersion, minimum_version)
+            if isinstance(minimum_version, str):
+                minimum_version = getattr(ssl.TLSVersion, minimum_version)
+            context.minimum_version = minimum_version
         else:
             raise RuntimeError("setting tls_minimum_version requires Python 3.7 and OpenSSL 1.1 or newer")
-
     # check_hostname requires python 3.4+
     # we will perform the equivalent in HTTPSConnectionWithTimeout.connect() by calling ssl.match_hostname
     # if check_hostname is not supported.
@@ -178,6 +181,20 @@ def _get_end2end_headers(response):
     hopbyhop = list(HOP_BY_HOP)
     hopbyhop.extend([x.strip() for x in response.get("connection", "").split(",")])
     return [header for header in list(response.keys()) if header not in hopbyhop]
+
+
+def _errno_from_exception(e):
+    # socket.error and common wrap in .args
+    if len(e.args) > 0:
+        return e.args[0].errno if isinstance(e.args[0], socket.error) else e.errno
+
+    # pysocks.ProxyError wraps in .socket_err
+    # https://github.com/httplib2/httplib2/pull/202
+    if hasattr(e, "socket_err"):
+        e_int = e.socket_err
+        return e_int.args[0].errno if isinstance(e_int.args[0], socket.error) else e_int.errno
+
+    return None
 
 
 URI = re.compile(r"^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?")
@@ -223,7 +240,7 @@ def safename(filename):
         filename = filename.decode("utf-8")
     else:
         filename_bytes = filename.encode("utf-8")
-    filemd5 = _md5(filename_bytes).hexdigest()
+    filesha1 = _sha(filename_bytes).hexdigest()
     filename = re_url_scheme.sub("", filename)
     filename = re_unsafe.sub("", filename)
 
@@ -234,7 +251,7 @@ def safename(filename):
     # Thus max safe filename x = 93 chars. Let it be 90 to make a round sum:
     filename = filename[:90]
 
-    return ",".join((filename, filemd5))
+    return ",".join((filename, filesha1))
 
 
 NORMALIZE_SPACE = re.compile(r"(?:\r\n)?[ \t]+")
@@ -834,10 +851,10 @@ class ProxyInfo(object):
           proxy_headers: Additional or modified headers for the proxy connect
           request.
         """
-        if isinstance(proxy_user, bytes):
-            proxy_user = proxy_user.decode()
-        if isinstance(proxy_pass, bytes):
-            proxy_pass = proxy_pass.decode()
+        if isinstance(proxy_user, str):
+            proxy_user = proxy_user.encode()
+        if isinstance(proxy_pass, str):
+            proxy_pass = proxy_pass.encode()
         (
             self.proxy_type,
             self.proxy_host,
@@ -913,34 +930,14 @@ def proxy_info_from_url(url, method="http", noproxy=None):
     """Construct a ProxyInfo from a URL (such as http_proxy env var)
     """
     url = urllib.parse.urlparse(url)
-    username = None
-    password = None
-    port = None
-    if "@" in url[1]:
-        ident, host_port = url[1].split("@", 1)
-        if ":" in ident:
-            username, password = ident.split(":", 1)
-        else:
-            password = ident
-    else:
-        host_port = url[1]
-    if ":" in host_port:
-        host, port = host_port.split(":", 1)
-    else:
-        host = host_port
-
-    if port:
-        port = int(port)
-    else:
-        port = dict(https=443, http=80)[method]
 
     proxy_type = 3  # socks.PROXY_TYPE_HTTP
     pi = ProxyInfo(
         proxy_type=proxy_type,
-        proxy_host=host,
-        proxy_port=port,
-        proxy_user=username or None,
-        proxy_pass=password or None,
+        proxy_host=url.hostname,
+        proxy_port=url.port or dict(https=443, http=80)[method],
+        proxy_user=url.username or None,
+        proxy_pass=url.password or None,
         proxy_headers=None,
     )
 
@@ -1068,6 +1065,7 @@ class HTTPSConnectionWithTimeout(http.client.HTTPSConnection):
         tls_maximum_version=None,
         tls_minimum_version=None,
         key_password=None,
+        context=None
     ):
 
         self.disable_ssl_certificate_validation = disable_ssl_certificate_validation
@@ -1077,15 +1075,16 @@ class HTTPSConnectionWithTimeout(http.client.HTTPSConnection):
         if proxy_info and not isinstance(proxy_info, ProxyInfo):
             self.proxy_info = proxy_info("https")
 
-        context = _build_ssl_context(
-            self.disable_ssl_certificate_validation,
-            self.ca_certs,
-            cert_file,
-            key_file,
-            maximum_version=tls_maximum_version,
-            minimum_version=tls_minimum_version,
-            key_password=key_password,
-        )
+        if context is None:
+            context = _build_ssl_context(
+                self.disable_ssl_certificate_validation,
+                self.ca_certs,
+                cert_file,
+                key_file,
+                maximum_version=tls_maximum_version,
+                minimum_version=tls_minimum_version,
+                key_password=key_password,
+            )
         super(HTTPSConnectionWithTimeout, self).__init__(
             host, port=port, timeout=timeout, context=context,
         )
@@ -1212,6 +1211,7 @@ class Http(object):
         disable_ssl_certificate_validation=False,
         tls_maximum_version=None,
         tls_minimum_version=None,
+        context=None,
     ):
         """If 'cache' is a string then it is used as a directory name for
         a disk cache. Otherwise it must be an object that supports the
@@ -1238,12 +1238,13 @@ class Http(object):
 
         tls_maximum_version / tls_minimum_version require Python 3.7+ /
         OpenSSL 1.1.0g+. A value of "TLSv1_3" requires OpenSSL 1.1.1+.
-"""
+        """
         self.proxy_info = proxy_info
         self.ca_certs = ca_certs
         self.disable_ssl_certificate_validation = disable_ssl_certificate_validation
         self.tls_maximum_version = tls_maximum_version
         self.tls_minimum_version = tls_minimum_version
+        self.context = context
         # Map domain name to an httplib connection
         self.connections = {}
         # The location of the cache, for now a directory
@@ -1352,7 +1353,7 @@ class Http(object):
                 conn.close()
                 raise ServerNotFoundError("Unable to find the server at %s" % conn.host)
             except socket.error as e:
-                errno_ = e.args[0].errno if isinstance(e.args[0], socket.error) else e.errno
+                errno_ = _errno_from_exception(e)
                 if errno_ in (errno.ENETUNREACH, errno.EADDRNOTAVAIL) and i < RETRIES:
                     continue  # retry on potentially transient errors
                 raise
@@ -1471,6 +1472,8 @@ class Http(object):
                             old_response["content-location"] = absolute_uri
                         redirect_method = method
                         if response.status in [302, 303]:
+                            if 'content-length' in headers:
+                                del headers['content-length']
                             redirect_method = "GET"
                             body = None
                         (response, content) = self.request(
@@ -1556,6 +1559,7 @@ a string that contains the response entity body.
                             tls_maximum_version=self.tls_maximum_version,
                             tls_minimum_version=self.tls_minimum_version,
                             key_password=certs[0][2],
+                            context=self.context,
                         )
                     else:
                         conn = self.connections[conn_key] = connection_type(
@@ -1566,6 +1570,7 @@ a string that contains the response entity body.
                             disable_ssl_certificate_validation=self.disable_ssl_certificate_validation,
                             tls_maximum_version=self.tls_maximum_version,
                             tls_minimum_version=self.tls_minimum_version,
+                            context=self.context,
                         )
                 else:
                     conn = self.connections[conn_key] = connection_type(
@@ -1657,12 +1662,8 @@ a string that contains the response entity body.
                     entry_disposition = _entry_disposition(info, headers)
 
                     if entry_disposition == "FRESH":
-                        if not cached_value:
-                            info["status"] = "504"
-                            content = b""
                         response = Response(info)
-                        if cached_value:
-                            response.fromcache = True
+                        response.fromcache = True
                         return (response, content)
 
                     if entry_disposition == "STALE":
