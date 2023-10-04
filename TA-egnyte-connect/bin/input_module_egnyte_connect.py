@@ -83,8 +83,7 @@ def collect_events(helper, ew):
     mapping_data_type={"FILE_AUDIT": "file", "PERMISSION_AUDIT": "permission", "LOGIN_AUDIT": "login", "USER_AUDIT": "user", "WG_SETTINGS_AUDIT": "wg_settings", "GROUP_AUDIT": "group", "WORKFLOW_AUDIT": "workflow"}
     checkpoint = get_checkpoint(helper, key=account_name, start_date=start_date) or dict()
 
-    service = client.connect(host='localhost', port=8089,
-                             username='admin', password='admin123')
+    service = client.connect(host='localhost', port=8089, token=session_key)
 
     # Going to take access/refresh token if it is not available in the checkpoint
     if not checkpoint or str(checkpoint.get("code")) != str(code):
@@ -114,7 +113,7 @@ def collect_events(helper, ew):
                     body = storage_passwords.get(account_name + "/" + code)["body"]
                 except HTTPError:
                     storage_passwords.create(response.get("access_token"), account_name + "/" + code)
-                    helper.log_debug("New storage password entry created for {}".format(response.get("access_token")))
+                    helper.log_debug("New storage password entry created.")
         except Exception as e:
             raise e
     
