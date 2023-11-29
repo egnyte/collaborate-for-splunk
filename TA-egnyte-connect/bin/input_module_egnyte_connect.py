@@ -4,13 +4,13 @@ import sys
 import time
 import datetime
 import json
-from solnlib.splunkenv import get_splunkd_uri
-from solnlib.credentials import (CredentialManager, CredentialNotExistException)
 from datetime import datetime, timedelta
 from ta_egnyte_connect_utility import *
 import ta_egnyte_connect_constants as tec
 import splunk.rest as rest
 APP_NAME = os.path.abspath(__file__).split(os.sep)[-3]
+
+import splunklib.client as client
 
 '''
     IMPORTANT
@@ -82,12 +82,15 @@ def collect_events(helper, ew):
     auth_url = str(egnyte_domain_url) + "/puboauth/token"
     mapping_data_type={"FILE_AUDIT": "file", "PERMISSION_AUDIT": "permission", "LOGIN_AUDIT": "login", "USER_AUDIT": "user", "WG_SETTINGS_AUDIT": "wg_settings", "GROUP_AUDIT": "group", "WORKFLOW_AUDIT": "workflow"}
     checkpoint = get_checkpoint(helper, key=account_name, start_date=start_date) or dict()
+
+    service = client.connect(host='localhost', port=8089,
+                             username='admin', password='admin123')
+
     # Going to take access/refresh token if it is not available in the checkpoint
     if not checkpoint or str(checkpoint.get("code")) != str(code):
         helper.log_info("Checkpoint is not available or code changed from setup page. Hence requesting new access token.")
         try:
             response = generate_or_refresh_token(helper=helper, auth_url=auth_url, clientid=clientid, client_secret=client_secret, code=code, redirect_uri=REDIRECT_URI)
-            helper.log_info("Checkpoint is not available or code changed from setup page. Hence requested new access token.")
             if response.status_code == 400:
                 helper.log_error("Error while getting access/refresh token error")
                 helper.log_error("Please generate new code and update the input with new code.")
@@ -101,9 +104,17 @@ def collect_events(helper, ew):
                 return
             else:
                 response = response.json()
-                checkpoint["access_token"] = response.get("access_token")
                 checkpoint["code"] = code
                 set_checkpoint(helper, key=account_name, checkpoint=checkpoint)
+
+                storage_passwords = service.storage_passwords
+                try:
+                    # Retrieve existing password. This is safeguard in case of any racing condition.
+                    # updating token is not necessary as it is deterministic based on client_id, secret & domain
+                    body = storage_passwords.get(account_name + "/" + code)["body"]
+                except HTTPError:
+                    storage_passwords.create(response.get("access_token"), account_name + "/" + code)
+                    helper.log_debug("New storage password entry created for {}".format(response.get("access_token")))
         except Exception as e:
             raise e
     
@@ -116,6 +127,9 @@ def collect_events(helper, ew):
     params = {}
     if checkpoint_for_input.get("nextCursor"):
         params['nextCursor']=checkpoint_for_input.get("nextCursor")
+
+    token = get_token_from_secure_password(account_name, code, service, helper, checkpoint, checkpoint_for_input)
+
     while start_date_done:
         try:
             # collecting issues from the Egnyte server
@@ -126,7 +140,8 @@ def collect_events(helper, ew):
                 params.pop("startDate")
                 params.pop("endDate")
             data_url = str(egnyte_domain_url) + "/pubapi/v2/audit/stream"
-            data, response_text = collect_issues(helper, checkpoint.get('access_token'), data_url, params)
+
+            data, response_text = collect_issues(helper, token, data_url, params)
 
             if data == 401:
                 helper.log_error("Please generate new code and update the input with new code.")
