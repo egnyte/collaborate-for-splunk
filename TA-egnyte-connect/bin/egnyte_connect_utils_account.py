@@ -1,3 +1,5 @@
+import random
+
 from splunk_aoblib.rest_migration import ConfigMigrationHandler
 from splunktaucclib.rest_handler.endpoint import SingleModel
 from copy import deepcopy
@@ -37,7 +39,8 @@ class AccountHandler(ConfigMigrationHandler):
                     "disabled": "true",
                     "egnyte_domain_url": ENDPOINT,
                     "index": INDEX_NAME,
-                    "data_type": i
+                    "data_type": i,
+                    "interval": str(random.randint(300, 600))
                 }
             else:
                 input_stanza = {
@@ -46,7 +49,8 @@ class AccountHandler(ConfigMigrationHandler):
                         "disabled": "true",
                         "egnyte_domain_url": ENDPOINT,
                         "index": INDEX_NAME,
-                        "data_type": i
+                        "data_type": i,
+                        "interval": str(random.randint(300, 600))
                     }
 
             # Using Splunk internal API to create default input

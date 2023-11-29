@@ -24,6 +24,8 @@ def use_single_instance_mode():
     return True
 '''
 
+MAX_QUERYING_DURATION = 50
+
 def validate_input(helper, definition):
     """Implement your own validation logic to validate the input stanza configurations"""
     # This example accesses the modular input variable
@@ -62,6 +64,8 @@ def set_checkpoint(helper, key, checkpoint):
     return helper.save_check_point(key, checkpoint)
 
 def collect_events(helper, ew):
+    start_time = time.time()
+
     # getting setup parameters
     input_name = helper.get_input_stanza_names()
     input_stanza = helper.get_input_stanza()
@@ -129,7 +133,7 @@ def collect_events(helper, ew):
 
     token = get_token_from_secure_password(account_name, code, service, helper, checkpoint, checkpoint_for_input)
 
-    while start_date_done:
+    while start_date_done and (time.time() - start_time < MAX_QUERYING_DURATION):
         try:
             # collecting issues from the Egnyte server
             params['startDate'] = checkpoint_for_input.get("start_date")
