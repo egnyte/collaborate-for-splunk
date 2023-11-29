@@ -360,12 +360,12 @@
                             "label": "Interval",
                             "type": "text",
                             "required": true,
-                            "help": "Time interval of input in seconds.",
+                            "help": "Time interval of input in seconds. Range 300 - 900",
                             "validators": [
                                 {
                                     "type": "regex",
-                                    "pattern": "^\\-[1-9]\\d*$|^\\d*$",
-                                    "errorMsg": "Interval must be an integer."
+                                    "pattern": "^[3-8]\\d{2}$|^900$",
+                                    "errorMsg": "Interval must be an integer within the range."
                                 }
                             ]
                         },
